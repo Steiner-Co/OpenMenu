@@ -118,7 +118,8 @@ struct ProjectStatusView: View {
             ForEach(projects, id: \.project.id) { item in
                 ProjectRow(
                     project: item.project,
-                    vcs: item.vcs
+                    vcs: item.vcs,
+                    projectService: projectService
                 )
             }
         }
@@ -159,59 +160,70 @@ struct ProjectStatusView: View {
 struct ProjectRow: View {
     let project: Project
     let vcs: VCSStatus?
+    let projectService: ProjectService
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 6) {
-                Image(systemName: "folder.fill")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.blue)
-
-                Text(project.displayName)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-
-                Spacer()
-            }
-
-            if vcs?.isRepo == true {
+        Button {
+            openProjectInBrowser()
+        } label: {
+            VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
-                    if let branch = vcs?.branch {
-                        HStack(spacing: 3) {
-                            Image(systemName: "arrow.branch")
-                                .font(.system(size: 9))
-                                .foregroundStyle(.secondary)
-                            Text(branch)
-                                .font(.system(size: 10))
-                                .foregroundStyle(.secondary)
-                        }
-                    }
+                    Image(systemName: "folder.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.blue)
 
-                    let modifiedCount = vcs?.totalModified ?? 0
-                    if modifiedCount > 0 {
-                        HStack(spacing: 3) {
-                            Image(systemName: "pencil.circle")
-                                .font(.system(size: 9))
-                                .foregroundStyle(.orange)
-                            Text("\(modifiedCount)")
-                                .font(.system(size: 10))
-                                .foregroundStyle(.orange)
-                        }
-                    }
+                    Text(project.displayName)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
 
                     Spacer()
                 }
-                .padding(.leading, 20)
+
+                if vcs?.isRepo == true {
+                    HStack(spacing: 6) {
+                        if let branch = vcs?.branch {
+                            HStack(spacing: 3) {
+                                Image(systemName: "arrow.branch")
+                                    .font(.system(size: 9))
+                                    .foregroundStyle(.secondary)
+                                Text(branch)
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+
+                        let modifiedCount = vcs?.totalModified ?? 0
+                        if modifiedCount > 0 {
+                            HStack(spacing: 3) {
+                                Image(systemName: "pencil.circle")
+                                    .font(.system(size: 9))
+                                    .foregroundStyle(.orange)
+                                Text("\(modifiedCount)")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(.orange)
+                            }
+                        }
+
+                        Spacer()
+                    }
+                    .padding(.leading, 20)
+                }
             }
+            .padding(.vertical, 4)
+            .padding(.horizontal, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Color.primary.opacity(0.05))
+            )
         }
-        .padding(.vertical, 4)
-        .padding(.horizontal, 8)
-        .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(Color.primary.opacity(0.05))
-        )
+        .buttonStyle(.plain)
+    }
+
+    private func openProjectInBrowser() {
+        guard let url = projectService.getProjectURL(for: project) else { return }
+        NSWorkspace.shared.open(url)
     }
 }
 

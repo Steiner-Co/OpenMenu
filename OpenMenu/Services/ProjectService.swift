@@ -139,11 +139,20 @@ class ProjectService {
         var result: [(project: Project, vcs: VCSStatus?)] = []
 
         for project in projects {
+            if project.id == "global" {
+                continue
+            }
             let vcs = try? await fetchVCSStatus(for: project.id)
             result.append((project: project, vcs: vcs))
         }
 
         return result
+    }
+
+    func getProjectURL(for project: Project) -> URL? {
+        guard let worktree = project.worktree else { return nil }
+        guard let encodedPath = worktree.data(using: .utf8)?.base64EncodedString() else { return nil }
+        return URL(string: "\(serverURL)/\(encodedPath)/session")
     }
 }
 
