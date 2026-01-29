@@ -10,8 +10,9 @@ import SwiftUI
 @main
 struct OpenMenuApp: App {
     var body: some Scene {
-        WindowGroup {
+        MenuBarExtra("OpenMenu", systemImage: "xmark.circle.fill") {
             ContentView()
         }
+        .menuBarExtraStyle(.window)
     }
 }
