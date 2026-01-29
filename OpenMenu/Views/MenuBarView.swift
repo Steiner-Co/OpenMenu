@@ -12,6 +12,7 @@ struct MenuBarView: View {
     let heartbeatService: HeartbeatService
     let taskCompletionMonitor: TaskCompletionMonitor
     @State private var quickActionsService = QuickActionsService()
+    @State private var projectService = ProjectService()
     @State private var settingsWindow: NSWindow?
     @AppStorage("notifyOnTaskComplete") private var notifyOnTaskComplete = true
     @State private var copyConfirmationShown = false
@@ -24,7 +25,12 @@ struct MenuBarView: View {
     var body: some View {
         VStack(spacing: 12) {
             StatusIndicator(status: heartbeatService.status)
-            
+
+            ProjectStatusView(
+                projectService: projectService,
+                isHealthy: heartbeatService.status.healthy
+            )
+
             Divider()
                 .padding(.vertical, 4)
             
