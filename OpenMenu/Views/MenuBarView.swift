@@ -9,7 +9,9 @@ import SwiftUI
 
 struct MenuBarView: View {
     let heartbeatService: HeartbeatService
+    let taskCompletionMonitor: TaskCompletionMonitor
     @State private var quickActionsService = QuickActionsService()
+    @AppStorage("notifyOnTaskComplete") private var notifyOnTaskComplete = true
     @State private var copyConfirmationShown = false
     @State private var sessions: [Session] = []
     @State private var isLoadingSessions = false
@@ -23,6 +25,11 @@ struct MenuBarView: View {
             
             Divider()
                 .padding(.vertical, 4)
+            
+            Toggle(isOn: $notifyOnTaskComplete) {
+                Label("Notify when task completes", systemImage: "bell.badge")
+            }
+            .toggleStyle(.switch)
             
             ActionButton(icon: "safari", label: "Open Portal") {
                 quickActionsService.openPortal()
@@ -90,7 +97,7 @@ struct MenuBarView: View {
                         ForEach(sessions) { session in
                             SessionRow(
                                 session: session,
-                                isCopied: copiedSessionID == session.identifier
+                                isCopied: copiedSessionID == session.sessionID
                             ) {
                                 copySessionToClipboard(session)
                             }
@@ -105,14 +112,30 @@ struct MenuBarView: View {
         .onAppear {
             heartbeatService.startPolling()
             quickActionsService.serverURL = heartbeatService.serverURL
+            taskCompletionMonitor.serverURL = heartbeatService.serverURL
+            if taskCompletionMonitor.onTaskCompleted == nil {
+                taskCompletionMonitor.onTaskCompleted = { sessionID in
+                    let enabled = (UserDefaults.standard.object(forKey: "notifyOnTaskComplete") as? Bool) ?? true
+                    if enabled {
+                        NotificationService.shared.notifyTaskCompleted(sessionID: sessionID)
+                    }
+                }
+            }
+            if heartbeatService.status.healthy {
+                taskCompletionMonitor.start()
+            }
             loadSessions()
         }
         .onChange(of: heartbeatService.serverURL) { oldValue, newValue in
             quickActionsService.serverURL = newValue
+            taskCompletionMonitor.serverURL = newValue
         }
         .onChange(of: heartbeatService.status.healthy) { oldValue, newValue in
             if newValue {
+                taskCompletionMonitor.start()
                 loadSessions()
+            } else {
+                taskCompletionMonitor.stop()
             }
         }
     }
@@ -151,9 +174,9 @@ struct MenuBarView: View {
     private func copySessionToClipboard(_ session: Session) {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
-        pasteboard.setString(session.identifier, forType: .string)
+        pasteboard.setString(session.sessionID, forType: .string)
         
-        copiedSessionID = session.identifier
+        copiedSessionID = session.sessionID
         
         Task {
             try? await Task.sleep(nanoseconds: 2_000_000_000)
@@ -175,8 +198,8 @@ struct SessionRow: View {
                     .foregroundStyle(isCopied ? .green : .primary)
                     .frame(width: 16)
                 
-                Text(session.identifier)
-                    .font(.system(size: 12, design: .monospaced))
+                Text(session.displayName)
+                    .font(.system(size: 12))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -195,5 +218,5 @@ struct SessionRow: View {
 }
 
 #Preview {
-    MenuBarView(heartbeatService: HeartbeatService())
+    MenuBarView(heartbeatService: HeartbeatService(), taskCompletionMonitor: TaskCompletionMonitor())
 }

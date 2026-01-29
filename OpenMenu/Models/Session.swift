@@ -10,26 +10,37 @@ import Foundation
 struct Session: Codable, Identifiable {
     let idValue: String?
     let path: String?
+    let title: String?
     
-    /// The identifier to copy to clipboard (prefers id, falls back to path)
-    var identifier: String {
+    /// The session ID to copy to clipboard
+    var sessionID: String {
         if let idValue = idValue, !idValue.isEmpty {
             return idValue
-        }
-        if let path = path, !path.isEmpty {
-            return path
         }
         return ""
     }
     
+    /// Display name for the session (prefers title, falls back to path, then id)
+    var displayName: String {
+        if let title = title, !title.isEmpty {
+            return title
+        }
+        if let path = path, !path.isEmpty {
+            // Extract just the directory name from the path
+            return (path as NSString).lastPathComponent
+        }
+        return sessionID
+    }
+    
     /// For Identifiable conformance
     var id: String {
-        return identifier
+        return sessionID
     }
     
     enum CodingKeys: String, CodingKey {
         case idValue = "id"
         case path
+        case title
     }
 }
 

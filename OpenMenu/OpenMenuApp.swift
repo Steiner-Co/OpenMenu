@@ -10,10 +10,11 @@ import SwiftUI
 @main
 struct OpenMenuApp: App {
     @State private var heartbeatService = HeartbeatService()
+    @State private var taskCompletionMonitor = TaskCompletionMonitor()
     
     var body: some Scene {
         MenuBarExtra {
-            MenuBarView(heartbeatService: heartbeatService)
+            MenuBarView(heartbeatService: heartbeatService, taskCompletionMonitor: taskCompletionMonitor)
         } label: {
             Image(systemName: heartbeatService.status.healthy 
                 ? "checkmark.circle.fill" 

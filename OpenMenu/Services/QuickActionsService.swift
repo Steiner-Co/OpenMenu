@@ -101,7 +101,7 @@ class QuickActionsService {
         
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
-        pasteboard.setString(firstSession.identifier, forType: .string)
+        pasteboard.setString(firstSession.sessionID, forType: .string)
     }
     
     /// Executes the restart command in the background
