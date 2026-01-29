@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import Combine
 
 /// Subscribes to OpenCode's SSE event stream and invokes a callback when a session becomes idle (task completed).
 final class TaskCompletionMonitor {
@@ -16,6 +17,40 @@ final class TaskCompletionMonitor {
     
     private var monitorTask: Task<Void, Never>?
     private let reconnectDelay: TimeInterval = 5.0
+    private var cancellables = Set<AnyCancellable>()
+    
+    init() {
+        // Load settings from UserDefaults
+        loadSettings()
+        
+        // Observe UserDefaults changes
+        NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
+            .sink { [weak self] _ in
+                self?.handleSettingsChange()
+            }
+            .store(in: &cancellables)
+    }
+    
+    private func loadSettings() {
+        let defaults = UserDefaults.standard
+        serverURL = defaults.string(forKey: AppSettings.serverURLKey) ?? AppSettings.defaultServerURL
+    }
+    
+    private func handleSettingsChange() {
+        let defaults = UserDefaults.standard
+        let newServerURL = defaults.string(forKey: AppSettings.serverURLKey) ?? AppSettings.defaultServerURL
+        
+        let wasMonitoring = monitorTask != nil
+        let urlChanged = serverURL != newServerURL
+        
+        serverURL = newServerURL
+        
+        // Restart monitoring if URL changed while monitoring
+        if wasMonitoring && urlChanged {
+            stop()
+            start()
+        }
+    }
     
     func start() {
         guard monitorTask == nil else { return }

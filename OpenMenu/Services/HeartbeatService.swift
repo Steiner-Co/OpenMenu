@@ -7,6 +7,7 @@
 
 import Foundation
 import SwiftUI
+import Combine
 
 @Observable
 class HeartbeatService {
@@ -17,10 +18,50 @@ class HeartbeatService {
     var pollInterval: TimeInterval = 10.0
     
     private var pollingTask: Task<Void, Never>?
+    private var cancellables = Set<AnyCancellable>()
     
     init() {
-        // Service can be initialized without auto-starting polling
-        // Polling will be started explicitly when needed
+        // Load settings from UserDefaults
+        loadSettings()
+        
+        // Observe UserDefaults changes
+        NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
+            .sink { [weak self] _ in
+                self?.handleSettingsChange()
+            }
+            .store(in: &cancellables)
+    }
+    
+    private func loadSettings() {
+        let defaults = UserDefaults.standard
+        serverURL = defaults.string(forKey: AppSettings.serverURLKey) ?? AppSettings.defaultServerURL
+        
+        let intervalRaw = defaults.double(forKey: AppSettings.heartbeatIntervalKey)
+        if intervalRaw > 0 {
+            pollInterval = intervalRaw
+        } else {
+            pollInterval = AppSettings.defaultInterval.rawValue
+        }
+    }
+    
+    private func handleSettingsChange() {
+        let defaults = UserDefaults.standard
+        let newServerURL = defaults.string(forKey: AppSettings.serverURLKey) ?? AppSettings.defaultServerURL
+        let intervalRaw = defaults.double(forKey: AppSettings.heartbeatIntervalKey)
+        let newInterval = intervalRaw > 0 ? intervalRaw : AppSettings.defaultInterval.rawValue
+        
+        let wasPolling = isPolling
+        let intervalChanged = pollInterval != newInterval
+        let urlChanged = serverURL != newServerURL
+        
+        serverURL = newServerURL
+        pollInterval = newInterval
+        
+        // Restart polling if interval changed or URL changed while polling
+        if wasPolling && (intervalChanged || urlChanged) {
+            stopPolling()
+            startPolling()
+        }
     }
     
     deinit {

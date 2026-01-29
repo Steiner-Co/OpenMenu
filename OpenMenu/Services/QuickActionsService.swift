@@ -7,11 +7,31 @@
 
 import Foundation
 import AppKit
+import Combine
 
 @Observable
 class QuickActionsService {
     var serverURL: String = "http://127.0.0.1:4096"
     var restartCommand: String = "opencode restart"
+    
+    private var cancellables = Set<AnyCancellable>()
+    
+    init() {
+        // Load settings from UserDefaults
+        loadSettings()
+        
+        // Observe UserDefaults changes
+        NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
+            .sink { [weak self] _ in
+                self?.loadSettings()
+            }
+            .store(in: &cancellables)
+    }
+    
+    private func loadSettings() {
+        let defaults = UserDefaults.standard
+        serverURL = defaults.string(forKey: AppSettings.serverURLKey) ?? AppSettings.defaultServerURL
+    }
     
     /// Opens the OpenCode portal in the default browser
     func openPortal() {

@@ -6,11 +6,13 @@
 //
 
 import SwiftUI
+import AppKit
 
 struct MenuBarView: View {
     let heartbeatService: HeartbeatService
     let taskCompletionMonitor: TaskCompletionMonitor
     @State private var quickActionsService = QuickActionsService()
+    @State private var settingsWindow: NSWindow?
     @AppStorage("notifyOnTaskComplete") private var notifyOnTaskComplete = true
     @State private var copyConfirmationShown = false
     @State private var sessions: [Session] = []
@@ -44,6 +46,10 @@ struct MenuBarView: View {
                         errorMessage = "Failed to restart: \(error.localizedDescription)"
                     }
                 }
+            }
+            
+            ActionButton(icon: "gearshape", label: "Settings") {
+                openSettingsWindow()
             }
             
             // Only show sessions section if endpoint is available
@@ -111,8 +117,6 @@ struct MenuBarView: View {
         .frame(width: 280)
         .onAppear {
             heartbeatService.startPolling()
-            quickActionsService.serverURL = heartbeatService.serverURL
-            taskCompletionMonitor.serverURL = heartbeatService.serverURL
             if taskCompletionMonitor.onTaskCompleted == nil {
                 taskCompletionMonitor.onTaskCompleted = { sessionID in
                     let enabled = (UserDefaults.standard.object(forKey: "notifyOnTaskComplete") as? Bool) ?? true
@@ -125,10 +129,6 @@ struct MenuBarView: View {
                 taskCompletionMonitor.start()
             }
             loadSessions()
-        }
-        .onChange(of: heartbeatService.serverURL) { oldValue, newValue in
-            quickActionsService.serverURL = newValue
-            taskCompletionMonitor.serverURL = newValue
         }
         .onChange(of: heartbeatService.status.healthy) { oldValue, newValue in
             if newValue {
@@ -183,6 +183,44 @@ struct MenuBarView: View {
             copiedSessionID = nil
         }
     }
+    
+    private func openSettingsWindow() {
+        // Find existing settings window or create new one
+        if let existingWindow = settingsWindow, existingWindow.isVisible {
+            existingWindow.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        
+        // Check if window exists in NSApplication's windows
+        if let window = NSApplication.shared.windows.first(where: { $0.identifier?.rawValue == "settings" }) {
+            settingsWindow = window
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        
+        // Create a new settings window
+        let settingsView = SettingsWindow()
+        let hostingView = NSHostingView(rootView: settingsView)
+        hostingView.frame = NSRect(x: 0, y: 0, width: 400, height: 500)
+        
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 400, height: 500),
+            styleMask: [.titled, .closable, .miniaturizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = hostingView
+        window.title = "Settings"
+        window.identifier = NSUserInterfaceItemIdentifier("settings")
+        window.center()
+        window.isReleasedWhenClosed = false
+        
+        settingsWindow = window
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
 }
 
 struct SessionRow: View {
@@ -218,5 +256,8 @@ struct SessionRow: View {
 }
 
 #Preview {
-    MenuBarView(heartbeatService: HeartbeatService(), taskCompletionMonitor: TaskCompletionMonitor())
+    MenuBarView(
+        heartbeatService: HeartbeatService(),
+        taskCompletionMonitor: TaskCompletionMonitor()
+    )
 }
