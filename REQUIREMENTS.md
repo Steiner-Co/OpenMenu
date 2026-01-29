@@ -202,15 +202,20 @@ OpenMenu/
 **Priority:** High
 
 #### F6.1: Current Project Display
-- [ ] Display current project name/path in menu bar
-- [ ] Show project icon/badge
-- [ ] Click to expand project details
+- [x] Display current project name/path in menu bar
+- [x] Show project icon/badge
+- [x] Click to expand project details
 
 #### F6.2: VCS Status
-- [ ] Display current git branch
-- [ ] Show modified files count (via `/vcs`)
-- [ ] Indicate uncommitted changes with icon
-- [ ] Show ahead/behind status for remote
+- [x] Display current git branch
+- [x] Show modified files count (via `/vcs`)
+- [x] Indicate uncommitted changes with icon
+- [x] Show ahead/behind status for remote
+
+#### F6.3: Open Project in Browser
+- [x] Click project to open in OpenCode web interface
+- [x] Base64-encode project path for URL
+- [x] Navigate to `/<base64_path>/session`
 
 ### F7: Enhanced Session Management
 
@@ -447,7 +452,7 @@ OpenMenu/
 
 | Task | Priority | Status |
 |------|----------|--------|
-| Project awareness (path, VCS) | High | ⬜ |
+| Project awareness (path, VCS) | High | ✅ Complete |
 | Create new session | High | ⬜ |
 | Delete session | High | ⬜ |
 | Fork session | High | ⬜ |
@@ -492,6 +497,8 @@ OpenMenu/
 | **Task Completion Monitor** | Subscribes to `/global/event` SSE stream |
 | **Notification Service** | Sends macOS notifications when tasks complete |
 | **Dynamic Session Loading** | Loads sessions from `/session` endpoint |
+| **Project List** | Lists all projects from `/project` with VCS status |
+| **Open Project in Browser** | Click project to open in OpenCode web UI with base64-encoded path |
 
 ### Known Gaps (v1.0)
 

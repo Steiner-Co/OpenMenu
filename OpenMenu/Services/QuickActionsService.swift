@@ -129,14 +129,86 @@ class QuickActionsService {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/zsh")
         process.arguments = ["-c", restartCommand]
-        
+
         // Configure process to run in background
         process.standardOutput = nil
         process.standardError = nil
-        
+
         try process.run()
-        
+
         // Don't wait for completion - let it run in background
+    }
+
+    /// Fetches a single session by ID (fetches all sessions and filters)
+    /// If session is not found in the list, returns a minimal session with just the ID
+    func fetchSession(id sessionID: String) async throws -> Session {
+        print("📡 Fetching session \(sessionID) via /session endpoint")
+        
+        do {
+            let sessions = try await fetchSessions()
+            
+            if let session = sessions.first(where: { $0.sessionID == sessionID }) {
+                print("✅ Found session: \(session.displayName)")
+                return session
+            }
+            
+            // Session not found in list - create a minimal session
+            // This can happen when the session belongs to a different project
+            print("⚠️ Session \(sessionID) not in list, creating minimal session")
+            return Session(idValue: sessionID, path: nil, title: nil)
+        } catch {
+            // If fetching fails entirely, still create a minimal session
+            print("⚠️ Failed to fetch sessions: \(error.localizedDescription), creating minimal session")
+            return Session(idValue: sessionID, path: nil, title: nil)
+        }
+    }
+
+    /// Fetches the status of all sessions to determine which are actively working
+    func fetchSessionStatus() async throws -> [String: SessionStatus] {
+        guard let url = URL(string: "\(serverURL)/session/status") else {
+            throw QuickActionsError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 5.0
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        print("📡 Fetching session status from: \(url.absoluteString)")
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw QuickActionsError.invalidResponse
+            }
+
+            // Print response body for debugging
+            if let responseString = String(data: data, encoding: .utf8) {
+                print("📡 Session status response: \(responseString)")
+            }
+
+            if httpResponse.statusCode == 404 {
+                throw QuickActionsError.endpointNotFound
+            }
+
+            guard (200...299).contains(httpResponse.statusCode) else {
+                throw QuickActionsError.serverError(statusCode: httpResponse.statusCode)
+            }
+
+            let decoder = JSONDecoder()
+            if let statusMap = try? decoder.decode([String: SessionStatus].self, from: data) {
+                print("✅ Decoded session statuses: \(statusMap.count) sessions")
+                return statusMap
+            }
+
+            throw QuickActionsError.decodingFailed
+        } catch let error as QuickActionsError {
+            throw error
+        } catch {
+            throw QuickActionsError.networkError(error.localizedDescription)
+        }
     }
 }
 
@@ -149,6 +221,7 @@ enum QuickActionsError: LocalizedError {
     case serverError(statusCode: Int)
     case decodingFailed
     case networkError(String)
+    case sessionNotFound(String)
     
     var errorDescription: String? {
         switch self {
@@ -168,6 +241,8 @@ enum QuickActionsError: LocalizedError {
             return "Unable to parse response"
         case .networkError(let message):
             return "Network error: \(message)"
+        case .sessionNotFound(let sessionID):
+            return "Session not found: \(sessionID)"
         }
     }
 }
