@@ -50,6 +50,7 @@ struct SessionActivityView: View {
             RoundedRectangle(cornerRadius: 6)
                 .fill(statusType == .busy ? Color.blue.opacity(0.08) : Color.primary.opacity(0.05))
         )
+        .accessibilityLabel("\(session.displayName) - \(statusType == .busy ? "generating code" : "completed")")
     }
 }
 

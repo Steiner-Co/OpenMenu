@@ -12,10 +12,12 @@ struct MenuBarView: View {
     let heartbeatService: HeartbeatService
     let taskCompletionMonitor: TaskCompletionMonitor
     @ObservedObject var sessionActivityMonitor: SessionActivityMonitor
+    let menuBarAnimationManager: MenuBarAnimationManager
     @State private var quickActionsService = QuickActionsService()
     @State private var projectService = ProjectService()
     @State private var settingsWindow: NSWindow?
     @AppStorage("notifyOnTaskComplete") private var notifyOnTaskComplete = true
+    @AppStorage("animateMenuBarOnComplete") private var animateMenuBarOnComplete = true
     @State private var errorMessage: String?
     @State private var copiedSessionID: String?
     @State private var sessionsEndpointAvailable = true
@@ -35,6 +37,11 @@ struct MenuBarView: View {
 
             Toggle(isOn: $notifyOnTaskComplete) {
                 Label("Notify when task completes", systemImage: "bell.badge")
+            }
+            .toggleStyle(.switch)
+            
+            Toggle(isOn: $animateMenuBarOnComplete) {
+                Label("Animate menu bar on complete", systemImage: "sparkles")
             }
             .toggleStyle(.switch)
 
@@ -107,10 +114,19 @@ struct MenuBarView: View {
         .onAppear {
             heartbeatService.startPolling()
             if taskCompletionMonitor.onTaskCompleted == nil {
-                taskCompletionMonitor.onTaskCompleted = { sessionID in
-                    let enabled = (UserDefaults.standard.object(forKey: "notifyOnTaskComplete") as? Bool) ?? true
-                    if enabled {
+                taskCompletionMonitor.onTaskCompleted = { [menuBarAnimationManager] sessionID in
+                    // Send notification if enabled
+                    let notifyEnabled = (UserDefaults.standard.object(forKey: "notifyOnTaskComplete") as? Bool) ?? true
+                    if notifyEnabled {
                         NotificationService.shared.notifyTaskCompleted(sessionID: sessionID)
+                    }
+                    
+                    // Animate menu bar if enabled
+                    let animateEnabled = (UserDefaults.standard.object(forKey: "animateMenuBarOnComplete") as? Bool) ?? true
+                    if animateEnabled {
+                        Task { @MainActor in
+                            menuBarAnimationManager.showTaskCompleted(sessionID: sessionID)
+                        }
                     }
                 }
             }
@@ -243,6 +259,8 @@ struct SessionRow: View {
             )
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("Copy session ID to clipboard")
+        .accessibilityHint("Copies \(session.displayName) ID")
     }
 }
 
@@ -250,6 +268,7 @@ struct SessionRow: View {
     MenuBarView(
         heartbeatService: HeartbeatService(),
         taskCompletionMonitor: TaskCompletionMonitor(),
-        sessionActivityMonitor: SessionActivityMonitor()
+        sessionActivityMonitor: SessionActivityMonitor(),
+        menuBarAnimationManager: MenuBarAnimationManager()
     )
 }

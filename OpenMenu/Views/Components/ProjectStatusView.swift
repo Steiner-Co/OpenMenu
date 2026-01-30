@@ -219,6 +219,8 @@ struct ProjectRow: View {
             )
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("\(project.displayName) - \(vcs?.isRepo == true ? "git repository" : "project")")
+        .accessibilityHint("Opens project in OpenCode web interface")
     }
 
     private func openProjectInBrowser() {

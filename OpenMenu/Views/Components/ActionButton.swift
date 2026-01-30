@@ -36,6 +36,7 @@ struct ActionButton: View {
             )
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(label)
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.15)) {
                 isHovered = hovering

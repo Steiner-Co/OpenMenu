@@ -22,40 +22,34 @@ OpenMenu is a native macOS menu bar utility designed for solo developers to moni
 
 ```
 OpenMenu/
-├── OpenMenuApp.swift          # App entry point with MenuBarExtra
-├── ContentView.swift          # Unused - can be removed
+├── OpenMenuApp.swift              # App entry point with MenuBarExtra
+├── ContentView.swift              # Unused - can be removed
 ├── Models/
-│   ├── ServerStatus.swift     # Health response model
-│   ├── AppSettings.swift      # User preferences model
-│   ├── Session.swift          # Session model for session list
-│   ├── Project.swift          # Project and VCS info models
-│   ├── Provider.swift         # Provider and model info models
-│   └── Tool.swift             # LSP, MCP, Formatter status models
+│   ├── ServerStatus.swift         # Health response model
+│   ├── AppSettings.swift          # User preferences model
+│   ├── Session.swift              # Session model
+│   ├── SessionStatus.swift        # Session activity status model
+│   ├── Project.swift              # Project and VCS info models
+│   ├── Provider.swift             # Provider and model info models
+│   └── Tool.swift                 # LSP, MCP, Formatter status models
 ├── Services/
-│   ├── HeartbeatService.swift # Networking & polling logic
-│   ├── SettingsManager.swift  # UserDefaults persistence (via @AppStorage)
-│   ├── QuickActionsService.swift # Portal, restart, session actions
-│   ├── TaskCompletionMonitor.swift # SSE event monitoring for task completion
-│   ├── NotificationService.swift # macOS notifications
-│   ├── ProjectService.swift   # Project and VCS API client
-│   ├── SessionService.swift   # Full session management API client
-│   ├── ProviderService.swift  # Provider and model API client
-│   ├── ToolService.swift      # LSP, MCP, Formatter status API
-│   └── APIService.swift       # Generic OpenCode API client
+│   ├── HeartbeatService.swift     # Health check polling
+│   ├── QuickActionsService.swift  # Portal, restart, session actions
+│   ├── TaskCompletionMonitor.swift# SSE event monitoring for task completion
+│   ├── SessionActivityMonitor.swift# Real-time session activity tracking
+│   ├── NotificationService.swift  # macOS notifications
+│   ├── ProjectService.swift       # Project and VCS API client
+│   └── APIService.swift           # Generic OpenCode API client
 ├── Views/
-│   ├── MenuBarView.swift      # Main menu bar content
-│   ├── SettingsWindow.swift   # Settings window view
-│   ├── Components/
-│   │   ├── StatusIndicator.swift
-│   │   ├── ActionButton.swift
-│   │   ├── SessionRow.swift
-│   │   └── ProjectCard.swift
-│   └── Sheets/
-│       ├── CreateSessionSheet.swift
-│       ├── SessionDetailSheet.swift
-│       └── ProviderStatusSheet.swift
+│   ├── MenuBarView.swift          # Main menu bar content
+│   ├── SettingsWindow.swift       # Settings window view
+│   └── Components/
+│       ├── StatusIndicator.swift  # Server status display
+│       ├── ActionButton.swift     # Reusable action button
+│       ├── ProjectStatusView.swift# Project list with VCS status
+│       └── SessionActivityView.swift# Active session with loading spinner
 └── Resources/
-    └── Assets.xcassets        # App icons
+    └── Assets.xcassets            # App icons
 ```
 
 ---
@@ -168,8 +162,8 @@ OpenMenu/
 
 **Priority:** Medium
 
-- [ ] Native macOS window with `.hiddenTitleBar` style
-- [ ] Keyboard shortcut: `⌘,`
+- [x] Native macOS window with `.hiddenTitleBar` style
+- [x] Keyboard shortcut: `⌘,` opens settings window
 
 #### F4.1: Server Configuration
 - [x] Text field for server URL/port
@@ -197,27 +191,44 @@ OpenMenu/
 
 ## Extended Features (v2.0)
 
-### F6: Project Awareness
+### F6: Active Session Monitoring (NEW)
 
 **Priority:** High
 
-#### F6.1: Current Project Display
+#### F6.1: Real-time Session Tracking
+- [x] Subscribe to `/global/event` SSE stream
+- [x] Detect `session.busy` events for active sessions
+- [x] Detect `session.idle` events for completed sessions
+- [x] Auto-fetch session details when session becomes active
+
+#### F6.2: Active Sessions Display
+- [x] Show only currently working sessions
+- [x] Display loading spinner for active sessions
+- [x] Show "Generating code" badge
+- [x] Count badge showing number of active sessions
+- [x] Auto-remove sessions when work completes
+
+### F7: Project Awareness
+
+**Priority:** High
+
+#### F7.1: Current Project Display
 - [x] Display current project name/path in menu bar
 - [x] Show project icon/badge
 - [x] Click to expand project details
 
-#### F6.2: VCS Status
+#### F7.2: VCS Status
 - [x] Display current git branch
 - [x] Show modified files count (via `/vcs`)
 - [x] Indicate uncommitted changes with icon
 - [x] Show ahead/behind status for remote
 
-#### F6.3: Open Project in Browser
+#### F7.3: Open Project in Browser
 - [x] Click project to open in OpenCode web interface
 - [x] Base64-encode project path for URL
 - [x] Navigate to `/<base64_path>/session`
 
-### F7: Enhanced Session Management
+### F8: Enhanced Session Management
 
 **Priority:** High
 
@@ -250,30 +261,30 @@ OpenMenu/
 - [ ] Copy shareable link to clipboard
 - [ ] Unshare via `DELETE /session/:id/share`
 
-### F8: Provider & Model Status
+### F9: Provider & Model Status
 
 **Priority:** Medium
 
-#### F8.1: Provider List
+#### F9.1: Provider List
 - [ ] Fetch available providers via `GET /provider`
 - [ ] Display connected providers
 - [ ] Show provider icons and status
 
-#### F8.2: Model Display
+#### F9.2: Model Display
 - [ ] Show currently selected model
 - [ ] Display model for each provider
 - [ ] Quick model switcher dropdown
 
-#### F8.3: Provider Health
+#### F9.3: Provider Health
 - [ ] Check provider authentication status
 - [ ] Show auth required indicators
 - [ ] Quick link to provider docs
 
-### F9: Session Status Dashboard
+### F10: Session Status Dashboard
 
 **Priority:** Medium
 
-#### F9.1: All Sessions Overview
+#### F10.1: All Sessions Overview
 - [ ] Fetch all session statuses via `GET /session/status`
 - [ ] Visual indicator for each session state:
   - `running` - Active processing
@@ -282,62 +293,62 @@ OpenMenu/
 - [ ] Message count per session
 - [ ] Last activity timestamp
 
-#### F9.2: Session Filtering
+#### F10.2: Session Filtering
 - [ ] Filter by status (running/idle)
 - [ ] Search sessions by title
 - [ ] Sort by recent activity
 
-### F10: Development Tools Status
+### F11: Development Tools Status
 
 **Priority:** Medium
 
-#### F10.1: LSP Servers
+#### F11.1: LSP Servers
 - [ ] Fetch LSP status via `GET /lsp`
 - [ ] Display running language servers
 - [ ] Show server language (Python, TypeScript, etc.)
 - [ ] Indicate connection status
 
-#### F10.2: Formatters
+#### F11.2: Formatters
 - [ ] Fetch formatter status via `GET /formatter`
 - [ ] Show active formatters
 - [ ] Indicate enabled/disabled state
 
-#### F10.3: MCP Servers
+#### F11.3: MCP Servers
 - [ ] Fetch MCP status via `GET /mcp`
 - [ ] Display running MCP servers
 - [ ] Add new MCP server via `POST /mcp`
 - [ ] Show server health/status
 
-### F11: Todo List Integration
+### F12: Todo List Integration
 
 **Priority:** Low
 
-#### F11.1: View Todos
+#### F12.1: View Todos
 - [ ] Fetch todo list via `GET /session/:id/todo`
 - [ ] Display todos in session detail view
 - [ ] Show completion status
 - [ ] Progress indicator
 
-#### F11.2: Permission Responses
+#### F12.2: Permission Responses
 - [ ] Handle permission requests via `POST /session/:id/permissions/:permissionID`
 - [ ] Show permission dialog in menu bar
 - [ ] Quick allow/deny actions
 
-### F12: Agent Launcher
+### F13: Agent Launcher
 
 **Priority:** Low
 
-#### F12.1: Available Agents List
+#### F13.1: Available Agents List
 - [ ] Fetch agents via `GET /agent`
 - [ ] Display agent names and descriptions
 - [ ] Show agent icons
 
-#### F12.2: Quick Agent Launch
+#### F13.2: Quick Agent Launch
 - [ ] Launch agent from menu
 - [ ] Select model for agent
 - [ ] Auto-create session with agent
 
-### F13: File Quick Actions
+### F14: File Quick Actions
 
 **Priority:** Low
 
@@ -356,36 +367,36 @@ OpenMenu/
 - [ ] Show modified/staged indicators
 - [ ] Quick git actions
 
-### F14: Session Intelligence
+### F15: Session Intelligence
 
 **Priority:** Low
 
-#### F14.1: View Session Diff
+#### F15.1: View Session Diff
 - [ ] Get diff via `GET /session/:id/diff`
 - [ ] Show changed files
 - [ ] Display diff summary
 
-#### F14.2: Summarize Session
+#### F15.2: Summarize Session
 - [ ] Summarize via `POST /session/:id/summarize`
 - [ ] Generate session summary
 - [ ] Copy summary to clipboard
 
-#### F14.3: Revert Messages
+#### F15.3: Revert Messages
 - [ ] Revert message via `POST /session/:id/revert`
 - [ ] Restore via `POST /session/:id/unrevert`
 - [ ] Review before revert
 
-### F15: TUI Integration
+### F16: TUI Integration
 
 **Priority:** Low
 
-#### F15.1: TUI Controls
+#### F16.1: TUI Controls
 - [ ] Open help dialog via `POST /tui/open-help`
 - [ ] Open session selector via `POST /tui/open-sessions`
 - [ ] Open theme/model selectors
 - [ ] Execute commands via `POST /tui/execute-command`
 
-#### F15.2: Toast Notifications
+#### F16.2: Toast Notifications
 - [ ] Show toast via `POST /tui/show-toast`
 - [ ] Display app notifications in TUI
 
@@ -445,14 +456,27 @@ OpenMenu/
 |------|--------|
 | Add accessibility labels to all controls | ⚠️ Needs review |
 | Validate URL input in settings | ✅ |
-| Add keyboard shortcuts | ⬜ Missing ⌘, for Settings |
+| Add keyboard shortcuts | ✅ ⌘, opens Settings |
 | Final UI polish and spacing adjustments | ✅ |
 
-### Phase 7: Extended Features (v2.0)
+### Phase 7: Active Session Monitoring (NEW)
+
+| Task | Status |
+|------|--------|
+| Create SessionActivityMonitor service | ✅ |
+| Subscribe to /global/event SSE stream | ✅ |
+| Detect session.busy events | ✅ |
+| Detect session.idle events | ✅ |
+| Auto-fetch session details | ✅ |
+| Display working sessions with spinner | ✅ |
+| "Generating code" badge | ✅ |
+| Count badge for active sessions | ✅ |
+
+### Phase 8: Extended Features (v2.0)
 
 | Task | Priority | Status |
 |------|----------|--------|
-| Project awareness (path, VCS) | High | ✅ Complete |
+| Active Session Monitoring | High | ✅ Complete |
 | Create new session | High | ⬜ |
 | Delete session | High | ⬜ |
 | Fork session | High | ⬜ |
@@ -486,25 +510,24 @@ OpenMenu/
 | Heartbeat Interval (F4.2) | ✅ Dropdown implemented |
 | Appearance Toggle (F4.3) | ✅ Show status text in menu bar |
 | Design Language (F5) | ✅ Ultra-thin material, SF Symbols |
+| Settings Window ⌘, | ✅ Keyboard shortcut implemented |
 
 ### Additional Features Implemented
 
 | Feature | Description |
 |---------|-------------|
-| **Active Sessions List** | Displays all active OpenCode sessions with refresh capability |
-| **Session Copy** | Click any session to copy its ID with visual feedback |
+| **Active Session Monitoring** | Real-time SSE-based tracking of working sessions with loading spinner |
+| **Session Activity Monitor** | New service tracking session.busy/session.idle events |
+| **Generating Code Badge** | Blue badge showing "Generating code" for active sessions |
+| **Session Count Badge** | Badge showing number of active sessions |
 | **Task Completion Notifications** | Receives SSE events for session.idle and notifies user |
-| **Task Completion Monitor** | Subscribes to `/global/event` SSE stream |
-| **Notification Service** | Sends macOS notifications when tasks complete |
-| **Dynamic Session Loading** | Loads sessions from `/session` endpoint |
 | **Project List** | Lists all projects from `/project` with VCS status |
-| **Open Project in Browser** | Click project to open in OpenCode web UI with base64-encoded path |
+| **Open Project in Browser** | Click project to open in OpenCode web UI |
 
 ### Known Gaps (v1.0)
 
 | Item | Priority | Notes |
 |------|----------|-------|
-| Keyboard shortcut ⌘, | Medium | Settings window not accessible via keyboard |
 | Accessibility labels | Low | Some controls may lack full accessibility support |
 | ContentView.swift | Low | Unused file (dead code) can be removed |
 

@@ -12,6 +12,7 @@ struct OpenMenuApp: App {
     @State private var heartbeatService = HeartbeatService()
     @State private var taskCompletionMonitor = TaskCompletionMonitor()
     @State private var sessionActivityMonitor = SessionActivityMonitor()
+    @State private var menuBarAnimationManager = MenuBarAnimationManager()
     @AppStorage(AppSettings.showStatusTextKey) private var showStatusText = false
 
     var body: some Scene {
@@ -19,23 +20,15 @@ struct OpenMenuApp: App {
             MenuBarView(
                 heartbeatService: heartbeatService,
                 taskCompletionMonitor: taskCompletionMonitor,
-                sessionActivityMonitor: sessionActivityMonitor
+                sessionActivityMonitor: sessionActivityMonitor,
+                menuBarAnimationManager: menuBarAnimationManager
             )
         } label: {
-            if showStatusText {
-                Label(
-                    heartbeatService.status.healthy ? "Online" : "Offline",
-                    systemImage: heartbeatService.status.healthy
-                        ? "checkmark.circle.fill"
-                        : "xmark.circle.fill"
-                )
-                .foregroundStyle(heartbeatService.status.healthy ? .green : .red)
-            } else {
-                Image(systemName: heartbeatService.status.healthy
-                    ? "checkmark.circle.fill"
-                    : "xmark.circle.fill")
-                    .foregroundStyle(heartbeatService.status.healthy ? .green : .red)
-            }
+            AnimatedMenuBarLabel(
+                isHealthy: heartbeatService.status.healthy,
+                showStatusText: showStatusText,
+                showCompletionBanner: menuBarAnimationManager.showCompletionBanner
+            )
         }
         .menuBarExtraStyle(.window)
     }
