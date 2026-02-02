@@ -32,6 +32,25 @@ class QuickActionsService {
         let defaults = UserDefaults.standard
         serverURL = defaults.string(forKey: AppSettings.serverURLKey) ?? AppSettings.defaultServerURL
     }
+
+    private func makeURL(path: String, directory: String? = nil) throws -> URL {
+        guard var components = URLComponents(string: "\(serverURL)\(path)") else {
+            throw QuickActionsError.invalidURL
+        }
+
+        var queryItems = components.queryItems ?? []
+        if let directory, !directory.isEmpty {
+            queryItems.append(URLQueryItem(name: "directory", value: directory))
+        }
+        if !queryItems.isEmpty {
+            components.queryItems = queryItems
+        }
+
+        guard let url = components.url else {
+            throw QuickActionsError.invalidURL
+        }
+        return url
+    }
     
     /// Opens the OpenCode portal in the default browser
     func openPortal() {
@@ -43,11 +62,9 @@ class QuickActionsService {
         NSWorkspace.shared.open(url)
     }
     
-    /// Fetches the list of active sessions from the server
-    func fetchSessions() async throws -> [Session] {
-        guard let url = URL(string: "\(serverURL)/session") else {
-            throw QuickActionsError.invalidURL
-        }
+    /// Fetches the list of sessions from the server (optionally scoped to a directory/project).
+    func fetchSessions(directory: String? = nil) async throws -> [Session] {
+        let url = try makeURL(path: "/session", directory: directory)
         
         var request = URLRequest(url: url)
         request.timeoutInterval = 5.0
@@ -112,8 +129,9 @@ class QuickActionsService {
     }
     
     /// Fetches the first session and copies its ID to the clipboard
-    func copySessionID() async throws {
-        let sessions = try await fetchSessions()
+    @discardableResult
+    func copySessionID(directory: String? = nil) async throws -> String {
+        let sessions = try await fetchSessions(directory: directory)
         
         guard let firstSession = sessions.first else {
             throw QuickActionsError.noSessionsAvailable
@@ -122,6 +140,8 @@ class QuickActionsService {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(firstSession.sessionID, forType: .string)
+
+        return firstSession.sessionID
     }
     
     /// Executes the restart command in the background
@@ -141,11 +161,11 @@ class QuickActionsService {
 
     /// Fetches a single session by ID (fetches all sessions and filters)
     /// If session is not found in the list, returns a minimal session with just the ID
-    func fetchSession(id sessionID: String) async throws -> Session {
+    func fetchSession(id sessionID: String, directory: String? = nil) async throws -> Session {
         print("📡 Fetching session \(sessionID) via /session endpoint")
         
         do {
-            let sessions = try await fetchSessions()
+            let sessions = try await fetchSessions(directory: directory)
             
             if let session = sessions.first(where: { $0.sessionID == sessionID }) {
                 print("✅ Found session: \(session.displayName)")
@@ -164,10 +184,8 @@ class QuickActionsService {
     }
 
     /// Fetches the status of all sessions to determine which are actively working
-    func fetchSessionStatus() async throws -> [String: SessionStatus] {
-        guard let url = URL(string: "\(serverURL)/session/status") else {
-            throw QuickActionsError.invalidURL
-        }
+    func fetchSessionStatus(directory: String? = nil) async throws -> [String: SessionStatus] {
+        let url = try makeURL(path: "/session/status", directory: directory)
 
         var request = URLRequest(url: url)
         request.timeoutInterval = 5.0
