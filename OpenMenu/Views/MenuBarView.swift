@@ -40,7 +40,9 @@ struct MenuBarView: View {
     @State private var sessionStatusEndpointAvailable = true
     @State private var projectTodos: [String: [ProjectTodo]] = ProjectTodoStore.load()
     @State private var newTodoTitlesByProjectID: [String: String] = [:]
-    @State private var projectDetailTabsByProjectID: [String: ProjectDetailTab] = [:]
+    @State private var projectDetailTabsByProjectID: [String: ProjectDetailTab] = ProjectDetailTabStore.load()
+
+    @FocusState private var focusedTodoProjectID: String?
 
     @State private var sessionFetchTasks: [String: Task<Void, Never>] = [:]
 
@@ -259,6 +261,9 @@ struct MenuBarView: View {
         .onChange(of: projectTodos) { _, newValue in
             ProjectTodoStore.save(newValue)
         }
+        .onChange(of: projectDetailTabsByProjectID) { _, newValue in
+            ProjectDetailTabStore.save(newValue)
+        }
     }
 
     private func loadProjects(force: Bool) {
@@ -340,7 +345,7 @@ struct MenuBarView: View {
         VStack(alignment: .leading, spacing: 10) {
             Picker("", selection: detailTabBinding) {
                 ForEach(ProjectDetailTab.allCases) { tab in
-                    Text(tab.title)
+                    Text(projectDetailTabTitle(for: tab, projectID: projectID))
                         .tag(tab)
                 }
             }
@@ -424,12 +429,13 @@ struct MenuBarView: View {
     private func projectTodoSection(for project: Project) -> some View {
         let projectID = project.id
         let todos = orderedTodos(for: projectID)
+        let completedCount = todos.filter { $0.isDone }.count
         let newTitle = newTodoTitlesByProjectID[projectID] ?? ""
         let canAdd = !newTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
 
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
-                Text("Todo")
+                Text("Todos")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .textCase(.uppercase)
@@ -441,12 +447,23 @@ struct MenuBarView: View {
                 }
 
                 Spacer()
+
+                if completedCount > 0 {
+                    Button("Clear done") {
+                        clearCompletedTodos(for: projectID)
+                    }
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Clear completed todos")
+                }
             }
 
             HStack(spacing: 8) {
                 TextField("Add a todo", text: todoInputBinding(for: projectID))
                     .font(.system(size: 12))
                     .textFieldStyle(.plain)
+                    .focused($focusedTodoProjectID, equals: projectID)
                     .onSubmit { addTodo(for: projectID) }
 
                 Button(action: { addTodo(for: projectID) }) {
@@ -457,6 +474,15 @@ struct MenuBarView: View {
                 .buttonStyle(.plain)
                 .disabled(!canAdd)
                 .accessibilityLabel("Add todo")
+
+                Button(action: { deleteLastTodo(for: projectID) }) {
+                    Image(systemName: "delete.left")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(todos.isEmpty ? Color.secondary : Color.orange)
+                }
+                .buttonStyle(.plain)
+                .disabled(todos.isEmpty)
+                .accessibilityLabel("Delete last todo")
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
@@ -477,6 +503,7 @@ struct MenuBarView: View {
                         ProjectTodoRow(
                             todo: todo,
                             onToggle: { toggleTodo(for: projectID, todoID: todo.id) },
+                            onRename: { newTitle in updateTodoTitle(for: projectID, todoID: todo.id, title: newTitle) },
                             onDelete: { deleteTodo(for: projectID, todoID: todo.id) }
                         )
                     }
@@ -484,6 +511,17 @@ struct MenuBarView: View {
             }
         }
         .padding(.leading, 24)
+        .overlay(alignment: .topLeading) {
+            if focusedTodoProjectID == projectID {
+                Button(action: { deleteLastTodo(for: projectID) }) {
+                    EmptyView()
+                }
+                .keyboardShortcut(.delete, modifiers: [.command])
+                .frame(width: 0, height: 0)
+                .opacity(0)
+                .accessibilityHidden(true)
+            }
+        }
     }
 
     private func projectSessionStatus(for session: Session, projectID: String) -> SessionStatus.SessionActivityStatus? {
@@ -512,9 +550,45 @@ struct MenuBarView: View {
 
     private func projectDetailTabBinding(for projectID: String) -> Binding<ProjectDetailTab> {
         Binding(
-            get: { projectDetailTabsByProjectID[projectID] ?? .sessions },
+            get: { projectDetailTabsByProjectID[projectID] ?? defaultProjectTab(for: projectID) },
             set: { projectDetailTabsByProjectID[projectID] = $0 }
         )
+    }
+
+    private func projectDetailTabTitle(for tab: ProjectDetailTab, projectID: String) -> String {
+        switch tab {
+        case .sessions:
+            return sessionTabTitle(for: projectID)
+        case .todos:
+            return todoTabTitle(for: projectID)
+        }
+    }
+
+    private func sessionTabTitle(for projectID: String) -> String {
+        guard sessionsEndpointAvailable else { return "Sessions" }
+        guard let sessions = projectSessions[projectID] else { return "Sessions" }
+        return "Sessions \(sessions.count)"
+    }
+
+    private func todoTabTitle(for projectID: String) -> String {
+        let count = projectTodos[projectID]?.count ?? 0
+        return "Todos \(count)"
+    }
+
+    private func defaultProjectTab(for projectID: String) -> ProjectDetailTab {
+        if !sessionsEndpointAvailable {
+            return .todos
+        }
+
+        if let sessions = projectSessions[projectID], sessions.isEmpty {
+            return .todos
+        }
+
+        if let error = sessionsErrorsByProjectID[projectID], !error.isEmpty {
+            return .todos
+        }
+
+        return .sessions
     }
 
     private func addTodo(for projectID: String) {
@@ -541,6 +615,43 @@ struct MenuBarView: View {
         todo.isDone.toggle()
         todos[index] = todo
         projectTodos[projectID] = todos
+    }
+
+    private func updateTodoTitle(for projectID: String, todoID: String, title: String) {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        guard var todos = projectTodos[projectID] else { return }
+        guard let index = todos.firstIndex(where: { $0.id == todoID }) else { return }
+        if todos[index].title == trimmed { return }
+        var todo = todos[index]
+        todo.title = trimmed
+        todos[index] = todo
+        projectTodos[projectID] = todos
+    }
+
+    private func clearCompletedTodos(for projectID: String) {
+        guard var todos = projectTodos[projectID] else { return }
+        todos.removeAll { $0.isDone }
+        if todos.isEmpty {
+            projectTodos.removeValue(forKey: projectID)
+        } else {
+            projectTodos[projectID] = todos
+        }
+    }
+
+    private func deleteLastTodo(for projectID: String) {
+        guard var todos = projectTodos[projectID], !todos.isEmpty else { return }
+        if let index = todos.enumerated().max(by: { $0.element.createdAt < $1.element.createdAt })?.offset {
+            todos.remove(at: index)
+        } else {
+            todos.removeLast()
+        }
+
+        if todos.isEmpty {
+            projectTodos.removeValue(forKey: projectID)
+        } else {
+            projectTodos[projectID] = todos
+        }
     }
 
     private func deleteTodo(for projectID: String, todoID: String) {
@@ -841,22 +952,6 @@ private struct ToggleRow: View {
     }
 }
 
-private enum ProjectDetailTab: String, CaseIterable, Identifiable {
-    case sessions
-    case todos
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .sessions:
-            return "Sessions"
-        case .todos:
-            return "Todos"
-        }
-    }
-}
-
 private struct ProjectRowLabel: View {
     let project: Project
     let vcs: VCSStatus?
@@ -945,7 +1040,12 @@ private struct ProjectRowLabel: View {
 private struct ProjectTodoRow: View {
     let todo: ProjectTodo
     let onToggle: () -> Void
+    let onRename: (String) -> Void
     let onDelete: () -> Void
+
+    @State private var isEditing = false
+    @State private var editedTitle = ""
+    @FocusState private var isEditorFocused: Bool
 
     var body: some View {
         HStack(spacing: 10) {
@@ -958,14 +1058,32 @@ private struct ProjectTodoRow: View {
             .buttonStyle(.plain)
             .accessibilityLabel(todo.isDone ? "Mark todo as incomplete" : "Mark todo as complete")
 
-            Text(todo.title)
-                .font(.system(size: 12))
-                .foregroundStyle(todo.isDone ? .secondary : .primary)
-                .strikethrough(todo.isDone, color: .secondary)
-                .lineLimit(1)
-                .truncationMode(.tail)
+            if isEditing {
+                TextField("", text: $editedTitle)
+                    .font(.system(size: 12))
+                    .textFieldStyle(.plain)
+                    .focused($isEditorFocused)
+                    .onSubmit { commitEditing() }
+                    .onExitCommand { cancelEditing() }
+            } else {
+                Text(todo.title)
+                    .font(.system(size: 12))
+                    .foregroundStyle(todo.isDone ? .secondary : .primary)
+                    .strikethrough(todo.isDone, color: .secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .onTapGesture(count: 2) { startEditing() }
+            }
 
             Spacer()
+
+            Button(action: { isEditing ? commitEditing() : startEditing() }) {
+                Image(systemName: isEditing ? "checkmark" : "pencil")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(isEditing ? "Save todo title" : "Edit todo")
 
             Button(action: onDelete) {
                 Image(systemName: "trash")
@@ -981,6 +1099,32 @@ private struct ProjectTodoRow: View {
             RoundedRectangle(cornerRadius: 8)
                 .fill(Color.primary.opacity(0.05))
         )
+        .onChange(of: todo.title) { _, newValue in
+            if !isEditing {
+                editedTitle = newValue
+            }
+        }
+    }
+
+    private func startEditing() {
+        editedTitle = todo.title
+        isEditing = true
+        isEditorFocused = true
+    }
+
+    private func commitEditing() {
+        let trimmed = editedTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            cancelEditing()
+            return
+        }
+        onRename(trimmed)
+        isEditing = false
+    }
+
+    private func cancelEditing() {
+        editedTitle = todo.title
+        isEditing = false
     }
 }
 
