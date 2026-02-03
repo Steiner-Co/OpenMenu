@@ -38,6 +38,9 @@ struct MenuBarView: View {
     @State private var sessionsErrorsByProjectID: [String: String] = [:]
     @State private var sessionsEndpointAvailable = true
     @State private var sessionStatusEndpointAvailable = true
+    @State private var projectTodos: [String: [ProjectTodo]] = ProjectTodoStore.load()
+    @State private var newTodoTitlesByProjectID: [String: String] = [:]
+    @State private var projectDetailTabsByProjectID: [String: ProjectDetailTab] = [:]
 
     @State private var sessionFetchTasks: [String: Task<Void, Never>] = [:]
 
@@ -253,6 +256,9 @@ struct MenuBarView: View {
                 await fetchSessionDetailsForActiveSessions()
             }
         }
+        .onChange(of: projectTodos) { _, newValue in
+            ProjectTodoStore.save(newValue)
+        }
     }
 
     private func loadProjects(force: Bool) {
@@ -314,7 +320,7 @@ struct MenuBarView: View {
         )
 
         return DisclosureGroup(isExpanded: isExpandedBinding) {
-            projectSessionsContent(for: project)
+            projectDetailsContent(for: project)
         } label: {
             ProjectRowLabel(
                 project: project,
@@ -323,6 +329,31 @@ struct MenuBarView: View {
                 sessionsCount: projectSessions[projectID]?.count,
                 onOpenInPortal: { openProjectInBrowser(project) }
             )
+        }
+    }
+
+    @ViewBuilder
+    private func projectDetailsContent(for project: Project) -> some View {
+        let projectID = project.id
+        let detailTabBinding = projectDetailTabBinding(for: projectID)
+
+        VStack(alignment: .leading, spacing: 10) {
+            Picker("", selection: detailTabBinding) {
+                ForEach(ProjectDetailTab.allCases) { tab in
+                    Text(tab.title)
+                        .tag(tab)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .padding(.leading, 24)
+
+            switch detailTabBinding.wrappedValue {
+            case .sessions:
+                projectSessionsContent(for: project)
+            case .todos:
+                projectTodoSection(for: project)
+            }
         }
     }
 
@@ -389,11 +420,137 @@ struct MenuBarView: View {
         }
     }
 
+    @ViewBuilder
+    private func projectTodoSection(for project: Project) -> some View {
+        let projectID = project.id
+        let todos = orderedTodos(for: projectID)
+        let newTitle = newTodoTitlesByProjectID[projectID] ?? ""
+        let canAdd = !newTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Text("Todo")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+
+                if !todos.isEmpty {
+                    Text("\(todos.count)")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+            }
+
+            HStack(spacing: 8) {
+                TextField("Add a todo", text: todoInputBinding(for: projectID))
+                    .font(.system(size: 12))
+                    .textFieldStyle(.plain)
+                    .onSubmit { addTodo(for: projectID) }
+
+                Button(action: { addTodo(for: projectID) }) {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(canAdd ? .blue : .secondary)
+                }
+                .buttonStyle(.plain)
+                .disabled(!canAdd)
+                .accessibilityLabel("Add todo")
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.primary.opacity(0.05))
+            )
+
+            if todos.isEmpty {
+                Text("No todo items yet")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 4)
+            } else {
+                VStack(spacing: 6) {
+                    ForEach(todos) { todo in
+                        ProjectTodoRow(
+                            todo: todo,
+                            onToggle: { toggleTodo(for: projectID, todoID: todo.id) },
+                            onDelete: { deleteTodo(for: projectID, todoID: todo.id) }
+                        )
+                    }
+                }
+            }
+        }
+        .padding(.leading, 24)
+    }
+
     private func projectSessionStatus(for session: Session, projectID: String) -> SessionStatus.SessionActivityStatus? {
         if sessionActivityMonitor.isSessionWorking(session.sessionID) {
             return .busy
         }
         return projectSessionStatuses[projectID]?[session.sessionID]?.type
+    }
+
+    private func orderedTodos(for projectID: String) -> [ProjectTodo] {
+        let todos = projectTodos[projectID] ?? []
+        return todos.sorted { lhs, rhs in
+            if lhs.isDone != rhs.isDone {
+                return !lhs.isDone
+            }
+            return lhs.createdAt < rhs.createdAt
+        }
+    }
+
+    private func todoInputBinding(for projectID: String) -> Binding<String> {
+        Binding(
+            get: { newTodoTitlesByProjectID[projectID] ?? "" },
+            set: { newTodoTitlesByProjectID[projectID] = $0 }
+        )
+    }
+
+    private func projectDetailTabBinding(for projectID: String) -> Binding<ProjectDetailTab> {
+        Binding(
+            get: { projectDetailTabsByProjectID[projectID] ?? .sessions },
+            set: { projectDetailTabsByProjectID[projectID] = $0 }
+        )
+    }
+
+    private func addTodo(for projectID: String) {
+        let trimmed = (newTodoTitlesByProjectID[projectID] ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        var todos = projectTodos[projectID] ?? []
+        let todo = ProjectTodo(
+            id: UUID().uuidString,
+            title: trimmed,
+            isDone: false,
+            createdAt: Date().timeIntervalSince1970
+        )
+        todos.append(todo)
+        projectTodos[projectID] = todos
+        newTodoTitlesByProjectID[projectID] = ""
+    }
+
+    private func toggleTodo(for projectID: String, todoID: String) {
+        guard var todos = projectTodos[projectID] else { return }
+        guard let index = todos.firstIndex(where: { $0.id == todoID }) else { return }
+        var todo = todos[index]
+        todo.isDone.toggle()
+        todos[index] = todo
+        projectTodos[projectID] = todos
+    }
+
+    private func deleteTodo(for projectID: String, todoID: String) {
+        guard var todos = projectTodos[projectID] else { return }
+        todos.removeAll { $0.id == todoID }
+        if todos.isEmpty {
+            projectTodos.removeValue(forKey: projectID)
+        } else {
+            projectTodos[projectID] = todos
+        }
     }
 
     private func loadSessions(for project: Project, force: Bool) {
@@ -684,6 +841,22 @@ private struct ToggleRow: View {
     }
 }
 
+private enum ProjectDetailTab: String, CaseIterable, Identifiable {
+    case sessions
+    case todos
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .sessions:
+            return "Sessions"
+        case .todos:
+            return "Todos"
+        }
+    }
+}
+
 private struct ProjectRowLabel: View {
     let project: Project
     let vcs: VCSStatus?
@@ -762,6 +935,48 @@ private struct ProjectRowLabel: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.primary.opacity(0.05))
+        )
+    }
+}
+
+private struct ProjectTodoRow: View {
+    let todo: ProjectTodo
+    let onToggle: () -> Void
+    let onDelete: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Button(action: onToggle) {
+                Image(systemName: todo.isDone ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(todo.isDone ? .green : .secondary)
+                    .frame(width: 16)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(todo.isDone ? "Mark todo as incomplete" : "Mark todo as complete")
+
+            Text(todo.title)
+                .font(.system(size: 12))
+                .foregroundStyle(todo.isDone ? .secondary : .primary)
+                .strikethrough(todo.isDone, color: .secondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+
+            Spacer()
+
+            Button(action: onDelete) {
+                Image(systemName: "trash")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Delete todo")
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
         .background(
             RoundedRectangle(cornerRadius: 8)
                 .fill(Color.primary.opacity(0.05))
