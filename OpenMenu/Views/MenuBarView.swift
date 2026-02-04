@@ -24,6 +24,9 @@ struct MenuBarView: View {
     @State private var errorMessage: String?
     @State private var copiedSessionID: String?
     @State private var copiedFeedbackResetTask: Task<Void, Never>?
+    @State private var reviewMessage: String?
+    @State private var reviewMessageResetTask: Task<Void, Never>?
+    @State private var reviewLoadingProjectIDs: Set<String> = []
 
     @State private var projects: [(project: Project, vcs: VCSStatus?)] = []
     @State private var isLoadingProjects = false
@@ -71,6 +74,14 @@ struct MenuBarView: View {
                         icon: "exclamationmark.triangle.fill",
                         iconColor: .orange,
                         text: errorMessage
+                    )
+                }
+
+                if let reviewMessage, !reviewMessage.isEmpty {
+                    InlineNotice(
+                        icon: "checkmark.seal.fill",
+                        iconColor: .green,
+                        text: reviewMessage
                     )
                 }
 
@@ -332,6 +343,9 @@ struct MenuBarView: View {
                 vcs: vcs,
                 isLoadingSessions: loadingSessionsForProjectIDs.contains(projectID),
                 sessionsCount: projectSessions[projectID]?.count,
+                isStartingReview: reviewLoadingProjectIDs.contains(projectID),
+                isReviewEnabled: project.path != nil,
+                onStartReview: { startCodeReview(for: project) },
                 onOpenInPortal: { openProjectInBrowser(project) }
             )
         }
@@ -743,6 +757,39 @@ struct MenuBarView: View {
         }
     }
 
+    private func startCodeReview(for project: Project) {
+        Task {
+            await MainActor.run {
+                errorMessage = nil
+                reviewLoadingProjectIDs.insert(project.id)
+            }
+
+            do {
+                guard let directory = project.path, !directory.isEmpty else {
+                    await MainActor.run {
+                        reviewLoadingProjectIDs.remove(project.id)
+                        errorMessage = "Project path unavailable for \(project.displayName)"
+                    }
+                    return
+                }
+
+                let session = try await quickActionsService.startReviewSession(
+                    title: "\(project.displayName) Review",
+                    directory: directory
+                )
+                await MainActor.run {
+                    reviewLoadingProjectIDs.remove(project.id)
+                    showReviewMessage(session.sessionID)
+                }
+            } catch {
+                await MainActor.run {
+                    reviewLoadingProjectIDs.remove(project.id)
+                    errorMessage = "Failed to start review: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
     @MainActor
     private func fetchSessionDetailsForActiveSessions() async {
         let activeIDs = sessionActivityMonitor.workingSessionIDs
@@ -772,6 +819,16 @@ struct MenuBarView: View {
         copiedFeedbackResetTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             copiedSessionID = nil
+        }
+    }
+
+    @MainActor
+    private func showReviewMessage(_ sessionID: String) {
+        reviewMessageResetTask?.cancel()
+        reviewMessage = "Started review session \(String(sessionID.prefix(8)))…"
+        reviewMessageResetTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            reviewMessage = nil
         }
     }
 
@@ -957,6 +1014,9 @@ private struct ProjectRowLabel: View {
     let vcs: VCSStatus?
     let isLoadingSessions: Bool
     let sessionsCount: Int?
+    let isStartingReview: Bool
+    let isReviewEnabled: Bool
+    let onStartReview: () -> Void
     let onOpenInPortal: () -> Void
 
     var body: some View {
@@ -1018,6 +1078,20 @@ private struct ProjectRowLabel: View {
                         Capsule()
                             .fill(Color.blue)
                     )
+            }
+
+            if isStartingReview {
+                ProgressView()
+                    .scaleEffect(0.6)
+            } else {
+                Button(action: onStartReview) {
+                    Image(systemName: "text.magnifyingglass")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .disabled(!isReviewEnabled)
+                .accessibilityLabel("Start code review for \(project.displayName)")
             }
 
             Button(action: onOpenInPortal) {
