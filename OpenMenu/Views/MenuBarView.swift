@@ -16,6 +16,7 @@ struct MenuBarView: View {
 
     @State private var quickActionsService = QuickActionsService()
     @State private var projectService = ProjectService()
+    @State private var providerInsightsService = ProviderInsightsService()
     @State private var settingsWindow: NSWindow?
 
     @AppStorage("notifyOnTaskComplete") private var notifyOnTaskComplete = true
@@ -33,6 +34,9 @@ struct MenuBarView: View {
     @State private var projectsErrorMessage: String?
     @State private var projectsLastError: String?
     @State private var projectsLoadTask: Task<Void, Never>?
+    @State private var providerSummaries: [ProviderDashboardSummary] = []
+    @State private var isLoadingProviders = false
+    @State private var providersErrorMessage: String?
 
     @State private var expandedProjectIDs: Set<String> = []
     @State private var projectSessions: [String: [Session]] = [:]
@@ -119,6 +123,65 @@ struct MenuBarView: View {
                                     SessionActivityView(session: session, statusType: .busy)
                                 }
                                 .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
+
+                Divider()
+                    .padding(.vertical, 4)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    SectionHeader(title: "Providers", count: providerSummaries.count) {
+                        loadProviderInsights()
+                    }
+
+                    if isLoadingProviders && providerSummaries.isEmpty {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                                .scaleEffect(0.7)
+                            Text("Detecting providers...")
+                                .font(.system(size: 12))
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 4)
+                    } else if let providersErrorMessage {
+                        HStack(spacing: 8) {
+                            Image(systemName: "exclamationmark.triangle")
+                                .font(.system(size: 12))
+                                .foregroundStyle(.orange)
+                            Text(providersErrorMessage)
+                                .font(.system(size: 12))
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 4)
+                    } else if providerSummaries.isEmpty {
+                        HStack(spacing: 8) {
+                            Image(systemName: "bolt.horizontal.circle")
+                                .font(.system(size: 12))
+                                .foregroundStyle(.secondary)
+                            Text("No providers detected yet")
+                                .font(.system(size: 12))
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 4)
+                    } else {
+                        VStack(spacing: 6) {
+                            ForEach(providerSummaries) { summary in
+                                ProviderSummaryRow(
+                                    summary: summary,
+                                    onBudgetIncrease: {
+                                        providerInsightsService.adjustBudget(providerID: summary.providerID, deltaUSD: 10)
+                                        loadProviderInsights()
+                                    },
+                                    onBudgetDecrease: {
+                                        providerInsightsService.adjustBudget(providerID: summary.providerID, deltaUSD: -10)
+                                        loadProviderInsights()
+                                    }
+                                )
                             }
                         }
                     }
@@ -244,12 +307,14 @@ struct MenuBarView: View {
                 sessionActivityMonitor.start()
                 loadProjects(force: false)
             }
+            loadProviderInsights()
         }
         .onChange(of: heartbeatService.status.healthy) { _, newValue in
             if newValue {
                 taskCompletionMonitor.start()
                 sessionActivityMonitor.start()
                 loadProjects(force: true)
+                loadProviderInsights()
             } else {
                 taskCompletionMonitor.stop()
                 sessionActivityMonitor.stop()
@@ -262,6 +327,7 @@ struct MenuBarView: View {
                 projectSessionStatuses = [:]
                 loadingSessionsForProjectIDs = []
                 sessionsErrorsByProjectID = [:]
+                loadProviderInsights()
             }
         }
         .onChange(of: sessionActivityMonitor.workingSessionIDs) { _, _ in
@@ -742,6 +808,20 @@ struct MenuBarView: View {
         NSWorkspace.shared.open(url)
     }
 
+    private func loadProviderInsights() {
+        providersErrorMessage = nil
+        isLoadingProviders = true
+
+        Task {
+            let serverURL = heartbeatService.serverURL
+            let summaries = await providerInsightsService.loadDashboard(serverURL: serverURL)
+            await MainActor.run {
+                providerSummaries = summaries
+                isLoadingProviders = false
+            }
+        }
+    }
+
     private func restartServer() {
         Task {
             do {
@@ -1108,6 +1188,163 @@ private struct ProjectRowLabel: View {
             RoundedRectangle(cornerRadius: 8)
                 .fill(Color.primary.opacity(0.05))
         )
+    }
+}
+
+private struct ProviderSummaryRow: View {
+    let summary: ProviderDashboardSummary
+    let onBudgetIncrease: () -> Void
+    let onBudgetDecrease: () -> Void
+
+    private var statusColor: Color {
+        if summary.projectedBudgetRatio > 1 {
+            return .orange
+        }
+        if summary.budgetUsageRatio > 0.8 {
+            return .yellow
+        }
+        return .green
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 8) {
+                Text(summary.providerName)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.primary)
+
+                if summary.isAuthenticatedOnServer {
+                    Text("Connected")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.green)
+                } else {
+                    Text("Server auth unknown")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Text(summary.planProfile.label)
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(.secondary)
+
+                Text("$\(summary.spendThisMonthUSD, specifier: "%.2f")")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.primary)
+            }
+
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color.primary.opacity(0.10))
+                    Capsule()
+                        .fill(statusColor.opacity(0.85))
+                        .frame(width: max(4, geometry.size.width * min(summary.budgetUsageRatio, 1)))
+                }
+            }
+            .frame(height: 5)
+
+            HStack(spacing: 8) {
+                Text("Budget $\(summary.monthlyBudgetUSD, specifier: "%.0f")")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+
+                Text("Projected $\(summary.projectedMonthEndSpendUSD, specifier: "%.2f")")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+
+                Spacer()
+
+                Button(action: onBudgetDecrease) {
+                    Image(systemName: "minus.circle")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Decrease \(summary.providerName) budget")
+
+                Button(action: onBudgetIncrease) {
+                    Image(systemName: "plus.circle")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Increase \(summary.providerName) budget")
+            }
+
+            HStack(spacing: 6) {
+                if !summary.sourceBadges.isEmpty {
+                    ForEach(Array(summary.sourceBadges.prefix(2)), id: \.self) { badge in
+                        Text(badge)
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(
+                                Capsule()
+                                    .fill(Color.primary.opacity(0.08))
+                            )
+                    }
+                }
+
+                Spacer()
+
+                Text("\(summary.requestsThisMonth) req")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.secondary)
+                Text("\(summary.inputTokensThisMonth / 1_000)k in / \(summary.outputTokensThisMonth / 1_000)k out")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.secondary)
+                Text(summary.projectionConfidence.label)
+                    .font(.system(size: 9))
+                    .foregroundStyle(.tertiary)
+            }
+
+            if summary.isAtRisk {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.orange)
+                    Text("At risk: projected over budget by $\(max(summary.projectedMonthEndSpendUSD - summary.monthlyBudgetUSD, 0), specifier: "%.2f")")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.orange)
+                }
+            }
+
+            SpendTrendBars(values: summary.sevenDaySpendUSD)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 9)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.primary.opacity(0.05))
+        )
+    }
+}
+
+private struct SpendTrendBars: View {
+    let values: [Double]
+
+    private var maxValue: Double {
+        max(values.max() ?? 0, 0.01)
+    }
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 3) {
+            ForEach(Array(values.enumerated()), id: \.offset) { _, value in
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(value > 0 ? Color.blue.opacity(0.7) : Color.primary.opacity(0.12))
+                    .frame(width: 8, height: max(2, CGFloat((value / maxValue) * 20)))
+            }
+
+            Spacer()
+
+            Text("7d")
+                .font(.system(size: 9))
+                .foregroundStyle(.tertiary)
+        }
+        .frame(height: 22)
     }
 }
 
